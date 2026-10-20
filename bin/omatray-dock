@@ -14,7 +14,7 @@ def minimize(app_id, address, fresh):
     # and the window on its next probe. Docking never closes anything.
     if fresh:
         d.move_to_hidden(address)
-        d.shell("refresh")
+        d.ipc("refresh")
     elif not d.hide(app_id):
         d.move_to_hidden(address)
 
@@ -27,6 +27,9 @@ def main():
     cls = w.get("class") or ""
     if not cls.startswith("chrome-"):
         d.notify("Can't dock this window", "Only Chromium web apps can be docked.")
+        return
+    if d.is_popout(w):
+        d.notify("Can't dock a popout", "Focus the app's main window and try again.")
         return
     loaded = d.load_dock()
     if loaded is None:

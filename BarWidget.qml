@@ -8,7 +8,7 @@ import Quickshell.Widgets
 import qs.Commons
 import qs.Ui
 
-// Dock for web apps, modelled on the macOS Dock. The docked apps come from
+// Dock for web apps, modeled on the macOS Dock. The docked apps come from
 // ~/.config/omarchy/omatray.json, one bar icon each, in file order:
 //   - an icon is always present, like a Dock tile; a not-running app is dimmed
 //   - a badge carries the unread count, read from the window title
@@ -47,7 +47,7 @@ Panel {
   // Every value read from the file ends up in a command line or a Lua
   // expression, so each is checked against a strict pattern first and an entry
   // with a bad required field is skipped. Commands are also built as argv
-  // vectors (see runArgv), so this is the second line of defence.
+  // vectors (see runArgv), so this is the second line of defense.
   //
   // dock-validate:begin (self-contained; exercised from node by extracting this block)
   function validateApp(a) {
@@ -218,7 +218,7 @@ Panel {
   // window", which also keeps the close guard below honest.
   function addressOf(id) {
     var s = root.stateOf(id)
-    return s && /^0x[0-9a-f]+$/.test(s.address) ? s.address : ""
+    return s && /^0x[0-9a-fA-F]+$/.test(s.address) ? s.address : ""
   }
 
   // ---- actions ----
@@ -288,7 +288,7 @@ Panel {
     root.settleAll()
   }
 
-  // Dock behaviour: launch, or bring to the front, or tuck away if already there.
+  // Dock behavior: launch, or bring to the front, or tuck away if already there.
   function toggleApp(id) {
     var app = root.appById(id)
     if (!app) return
@@ -469,7 +469,7 @@ Panel {
         //
         // Sized against Style.bar.iconSlot (27px by default), not picked by eye:
         // a Dock badge sits at roughly a third of the tile, and the ring in
-        // background colour keeps it legible where it overlaps the glyph.
+        // background color keeps it legible where it overlaps the glyph.
         Rectangle {
           visible: tile.unread > 0
           anchors.right: parent.right

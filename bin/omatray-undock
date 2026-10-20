@@ -30,7 +30,7 @@ def main():
     # widget can't keep showing it. Other (even invalid) entries are preserved.
     doc["apps"] = [a for a in doc["apps"] if not (isinstance(a, dict) and a.get("id") == app["id"])]
     d.write_dock(doc)
-    d.shell("refresh")
+    d.ipc("refresh")
     d.notify("Removed from dock", app.get("name") or app["id"])
 
 

@@ -84,6 +84,17 @@ not_in_dock() { [[ -z "$(id_for_class "$1")" ]]; }
 
 # Focus a window by class, like clicking it. Only for windows on the active
 # workspace (focusing a hidden one would switch workspaces).
+# Run a helper the way its key does, on the window of class $1. The address is
+# pinned with OMATRAY_WINDOW so a focus change mid-run (a click, Chrome raising
+# its main window) can never send a close to one of the user's real windows.
+helper_on() {
+  local cls="$1" a; shift
+  focus_class "$cls"
+  a="$(addr_of "$cls")"
+  [[ "$a" =~ ^0x[0-9a-fA-F]+$ ]] || fail "no window for $cls"
+  OMATRAY_WINDOW="$a" "$@"
+}
+
 focus_class() {
   local a; a="$(addr_of "$1")"
   [[ "$a" =~ ^0x[0-9a-fA-F]+$ ]] || fail "no window to focus for $1"
@@ -139,15 +150,13 @@ step_launch() {
 
 step_dock() {
   log "SUPER+M: dock A and B (each is minimized to $HIDE_WS)"
-  focus_class "${APP_A[1]}"
-  "$OMATRAY_BIN/omatray-dock"
+  helper_on "${APP_A[1]}" "$OMATRAY_BIN/omatray-dock"
   wait_until "A in the dock file" in_dock "${APP_A[1]}"
   wait_until "A on $HIDE_WS" on_ws "${APP_A[1]}" "$HIDE_WS"
   ID_A="$(id_for_class "${APP_A[1]}")"
   pass "A docked as $ID_A"
   sleep 1
-  focus_class "${APP_B[1]}"
-  "$OMATRAY_BIN/omatray-dock"
+  helper_on "${APP_B[1]}" "$OMATRAY_BIN/omatray-dock"
   wait_until "B in the dock file" in_dock "${APP_B[1]}"
   wait_until "B on $HIDE_WS" on_ws "${APP_B[1]}" "$HIDE_WS"
   ID_B="$(id_for_class "${APP_B[1]}")"
@@ -171,8 +180,7 @@ step_show() {
 
 step_close_minimizes() {
   log "SUPER+W on docked A: minimize, still running"
-  focus_class "${APP_A[1]}"
-  "$OMATRAY_BIN/omatray-close"
+  helper_on "${APP_A[1]}" "$OMATRAY_BIN/omatray-close"
   wait_until "A on $HIDE_WS" on_ws "${APP_A[1]}" "$HIDE_WS"
   has_window "${APP_A[1]}" || fail "A was closed"
   pass "A still running"
@@ -183,8 +191,7 @@ step_force_close() {
   log "SUPER+ALT+W on docked A: really closed, stays docked"
   omatray show "$ID_A"
   wait_until "A on the active workspace" on_active_ws "${APP_A[1]}"
-  focus_class "${APP_A[1]}"
-  "$OMATRAY_BIN/omatray-close" --force
+  helper_on "${APP_A[1]}" "$OMATRAY_BIN/omatray-close" --force
   wait_until "A window gone" no_window "${APP_A[1]}"
   in_dock "${APP_A[1]}" || fail "A was removed from the dock file"
   pass "A still in the dock file"
@@ -203,9 +210,8 @@ step_relaunch() {
 
 step_undock() {
   log "SUPER+ALT+M: undock A, window stays open where it is"
-  focus_class "${APP_A[1]}"
   local ws; ws="$(ws_of "$(addr_of "${APP_A[1]}")")"
-  "$OMATRAY_BIN/omatray-undock"
+  helper_on "${APP_A[1]}" "$OMATRAY_BIN/omatray-undock"
   wait_until "A gone from the dock file" not_in_dock "${APP_A[1]}"
   has_window "${APP_A[1]}" || fail "undock closed A"
   on_ws "${APP_A[1]}" "$ws" || fail "undock moved A off workspace $ws"

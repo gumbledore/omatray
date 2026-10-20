@@ -2,6 +2,7 @@
 # Stand-in for hyprctl / omarchy-shell / notify-send, installed under each name.
 # Appends one JSON line per call to $STUB_LOG.
 #   STUB_ACTIVE      stdout for `hyprctl activewindow -j`
+#   STUB_CLIENTS     stdout for `hyprctl clients -j`
 #   STUB_SHELL_DOWN  =1 makes omarchy-shell exit 1
 import json, os, sys
 
@@ -10,5 +11,7 @@ with open(os.environ["STUB_LOG"], "a") as f:
     f.write(json.dumps([name] + sys.argv[1:]) + "\n")
 if name == "hyprctl" and sys.argv[1:3] == ["activewindow", "-j"]:
     sys.stdout.write(os.environ.get("STUB_ACTIVE", ""))
+if name == "hyprctl" and sys.argv[1:3] == ["clients", "-j"]:
+    sys.stdout.write(os.environ.get("STUB_CLIENTS", ""))
 if name == "omarchy-shell" and os.environ.get("STUB_SHELL_DOWN") == "1":
     sys.exit(1)

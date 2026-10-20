@@ -13,7 +13,8 @@ import urllib.parse
 
 HIDE_WORKSPACE = "special:omatray"
 
-# Same rules as validateApp() in BarWidget.qml. Keep the two in step.
+# Same rules as validateApp() in BarWidget.qml. Keep the two in step. Always
+# use fullmatch(): in Python `$` also matches before a trailing newline.
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 CLASS_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 DESKTOP_RE = re.compile(r"^[A-Za-z0-9._ -]{1,128}$")
@@ -30,6 +31,11 @@ def dock_path():
     return os.path.join(base, "omarchy", "omatray.json")
 
 
+def js_len(text):
+    """String length as the widget's JS counts it (UTF-16 code units)."""
+    return len(text.encode("utf-16-le")) // 2
+
+
 def validate_app(a):
     """Return an error string, or None when the entry is valid."""
     if not isinstance(a, dict):
@@ -39,18 +45,18 @@ def validate_app(a):
         v = a.get(key, "")
         return v if isinstance(v, str) else ""
 
-    if not ID_RE.match(s("id")):
+    if not ID_RE.fullmatch(s("id")):
         return "bad id"
-    if not 1 <= len(s("name")) <= 64 or CONTROL_RE.search(s("name")):
+    if not 1 <= js_len(s("name")) <= 64 or CONTROL_RE.search(s("name")):
         return "bad name"
-    if not CLASS_RE.match(s("matchClass")):
+    if not CLASS_RE.fullmatch(s("matchClass")):
         return "bad matchClass"
     d, u, p = s("desktopId"), s("url"), s("profile")
-    if d and not (DESKTOP_RE.match(d) and not d.startswith("-")):
+    if d and not (DESKTOP_RE.fullmatch(d) and not d.startswith("-")):
         return "bad desktopId"
-    if u and not URL_RE.match(u):
+    if u and not URL_RE.fullmatch(u):
         return "bad url"
-    if p and not PROFILE_RE.match(p):
+    if p and not PROFILE_RE.fullmatch(p):
         return "bad profile"
     if not d and not u:
         return "needs desktopId or url"
@@ -142,7 +148,7 @@ def window_class(url, profile):
     chrome-mail.google.com__-Default and .../mail/ gives ...com__mail_-Work.
     """
     p = urllib.parse.urlsplit(url)
-    return "chrome-%s_%s-%s" % (p.netloc, (p.path or "/").replace("/", "_"), profile or "Default")
+    return "chrome-%s_%s-%s" % (p.hostname or "", (p.path or "/").replace("/", "_"), profile or "Default")
 
 
 def _desktop_dirs():
@@ -165,7 +171,7 @@ def resolve_desktop(cls):
             if not fn.endswith(".desktop"):
                 continue
             entry = _parse_desktop(os.path.join(d, fn))
-            if not entry or not URL_RE.match(entry["url"]):
+            if not entry or not URL_RE.fullmatch(entry["url"]):
                 continue
             if window_class(entry["url"], entry["profile"]).lower() == cls.lower():
                 entry["desktopId"] = fn[: -len(".desktop")]
@@ -212,10 +218,13 @@ def entry_from_class(cls, taken):
         if path != "_":
             return None
         entry = {"name": host, "matchClass": cls, "url": "https://%s/" % host, "profile": profile}
-    entry["name"] = entry["name"][:64] or cls[:64]
+    name = entry["name"] or cls
+    while js_len(name) > 64:
+        name = name[:-1]
+    entry["name"] = name
     if validate_app(dict(entry, id="x")) is not None:
         return None
-    if not (ICON_PATH_RE.match(entry.get("icon", "")) or ICON_NAME_RE.match(entry.get("icon", ""))):
+    if not (ICON_PATH_RE.fullmatch(entry.get("icon", "")) or ICON_NAME_RE.fullmatch(entry.get("icon", ""))):
         entry.pop("icon", None)
     entry["id"] = make_id(entry["name"], entry.get("profile", ""), taken)
     # id first, matching how people write the file by hand.
@@ -238,15 +247,29 @@ def notify(summary, body=""):
     run(["notify-send", "-a", "omatray", summary, body])
 
 
-def active_window():
-    """The focused window as a dict, or None when there is none."""
+def _hyprctl_json(*args):
     try:
-        out = subprocess.run(["hyprctl", "activewindow", "-j"], stdin=subprocess.DEVNULL,
+        out = subprocess.run(["hyprctl", *args, "-j"], stdin=subprocess.DEVNULL,
                              capture_output=True, text=True, timeout=10).stdout
-        w = json.loads(out)
+        return json.loads(out)
     except (OSError, subprocess.SubprocessError, ValueError):
         return None
-    if not isinstance(w, dict) or not isinstance(w.get("address"), str) or not ADDRESS_RE.match(w["address"]):
+
+
+def active_window():
+    """The focused window as a dict, or None when there is none.
+
+    OMATRAY_WINDOW=<address> pins the window instead. The live smoke test uses
+    it so that a focus change mid-run can never point a close at a real window.
+    """
+    pinned = os.environ.get("OMATRAY_WINDOW")
+    if pinned is not None:
+        clients = _hyprctl_json("clients")
+        w = next((c for c in clients if isinstance(c, dict) and c.get("address") == pinned), None) \
+            if isinstance(clients, list) else None
+    else:
+        w = _hyprctl_json("activewindow")
+    if not isinstance(w, dict) or not isinstance(w.get("address"), str) or not ADDRESS_RE.fullmatch(w["address"]):
         return None
     return w
 
@@ -262,21 +285,36 @@ def dispatch(expr):
 def close_window(address):
     # hl.dsp.window.close() falls back to the *active* window when handed
     # "address:", so an empty or odd address must never reach it.
-    if not isinstance(address, str) or not ADDRESS_RE.match(address):
+    if not isinstance(address, str) or not ADDRESS_RE.fullmatch(address):
         return
     dispatch("hl.dsp.window.close({ window = %s })" % lua_str("address:" + address))
 
 
 def move_to_hidden(address):
-    if isinstance(address, str) and ADDRESS_RE.match(address):
+    if isinstance(address, str) and ADDRESS_RE.fullmatch(address):
         dispatch("hl.dsp.window.move({ window = %s, workspace = %s, follow = false })"
                  % (lua_str("address:" + address), lua_str(HIDE_WORKSPACE)))
 
 
-def shell(*args):
+def ipc(*args):
     return run(["omarchy-shell", "-q", "omatray", *args])
 
 
 def hide(app_id):
     """Minimize through the widget. True when the shell accepted the command."""
-    return shell("hide", app_id) == 0
+    return ipc("hide", app_id) == 0
+
+
+def is_popout(w):
+    """True when `w` is not the first window of its class, the one the widget tracks.
+
+    Chromium popouts (a message being composed, say) share the app's class.
+    Parking one would hide a draft, so the helpers treat them as ordinary windows.
+    If the client list can't be read, assume `w` is the main window.
+    """
+    clients = _hyprctl_json("clients")
+    cls = (w.get("class") or "").lower()
+    for c in clients if isinstance(clients, list) else []:
+        if isinstance(c, dict) and str(c.get("class") or "").lower() == cls:
+            return c.get("address") != w.get("address")
+    return False

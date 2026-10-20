@@ -332,5 +332,59 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(self.read_text(), '{"apps": []}')
 
 
+
+    # -- review fixes --
+    def test_validate_rejects_trailing_newline(self):
+        # Python's `$` matches before a final newline; the widget's JS does not.
+        e = {"id": "abc", "name": "A", "matchClass": "chrome-a", "url": "https://a/"}
+        self.assertIsNone(d.validate_app(e))
+        for k in ("id", "matchClass", "url"):
+            self.assertIsNotNone(d.validate_app(dict(e, **{k: e[k] + "\n"})), k)
+        self.assertIsNone(d.ADDRESS_RE.fullmatch("0x1\n"))
+
+    def test_name_length_counts_utf16_units(self):
+        e = {"id": "abc", "name": "\U0001F600" * 40, "matchClass": "chrome-a", "url": "https://a/"}
+        self.assertIsNotNone(d.validate_app(e))  # 80 UTF-16 units: the widget rejects it too
+        self.assertIsNone(d.validate_app(dict(e, name="\U0001F600" * 32)))
+
+    def test_window_class_ignores_port_and_userinfo(self):
+        self.assertEqual(d.window_class("https://u@host.example:8443/x/", "Work"), "chrome-host.example__x_-Work")
+
+    def test_close_popout_of_docked_app_closes_it(self):
+        self.env["STUB_CLIENTS"] = json.dumps([{"address": "0xmain1", "class": OUTLOOK_WORK},
+                                               {"address": ADDR, "class": OUTLOOK_WORK}])
+        self.close(active=window(OUTLOOK_WORK), dock=self.docked_dock())
+        self.assertEqual(self.hides(), [])
+        self.assertEqual(len(self.closes()), 1)
+        self.assertIn(ADDR, self.closes()[0][2])
+
+    def test_close_main_window_of_docked_app_hides(self):
+        self.env["STUB_CLIENTS"] = json.dumps([{"address": ADDR, "class": OUTLOOK_WORK},
+                                               {"address": "0xpop1", "class": OUTLOOK_WORK}])
+        self.close(active=window(OUTLOOK_WORK), dock=self.docked_dock())
+        self.assertEqual(len(self.hides()), 1)
+        self.assertEqual(self.closes(), [])
+
+    def test_dock_popout_notifies_and_changes_nothing(self):
+        self.env["STUB_CLIENTS"] = json.dumps([{"address": "0xmain1", "class": GMAIL},
+                                               {"address": ADDR, "class": GMAIL}])
+        self.dock(active=window(GMAIL))
+        self.assertFalse(os.path.exists(self.dockfile))
+        self.assertEqual((self.moves(), self.hides(), self.closes()), ([], [], []))
+        self.assertEqual(len(self.of("notify-send")), 1)
+
+    def test_pinned_window_is_used_instead_of_focus(self):
+        self.env["OMATRAY_WINDOW"] = "0xfeed"
+        self.env["STUB_CLIENTS"] = json.dumps([{"address": "0xfeed", "class": "Alacritty"}])
+        self.close(active=window("Alacritty", addr="0xbad"))
+        self.assertEqual(len(self.closes()), 1)
+        self.assertIn("0xfeed", self.closes()[0][2])
+
+    def test_pinned_window_missing_does_nothing(self):
+        self.env["OMATRAY_WINDOW"] = "0xgone"
+        self.env["STUB_CLIENTS"] = "[]"
+        self.close(active=window("Alacritty"))
+        self.assertEqual(self.closes(), [])
+
 if __name__ == "__main__":
     unittest.main()

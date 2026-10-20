@@ -7,7 +7,8 @@ omatray-close --force  close the focused window unconditionally (a docked app
 
 Reads the dock file directly, so it works with the shell down: if the shell
 cannot be reached, a docked app is closed rather than left unresponsive.
-A malformed dock file counts as "nothing docked".
+A malformed dock file counts as "nothing docked", and a popout of a docked
+app closes like any other window.
 """
 import os
 import sys
@@ -23,7 +24,8 @@ def main():
     if "--force" not in sys.argv[1:]:
         loaded = d.load_dock()
         app = d.find_by_class(loaded[1], w.get("class") or "") if loaded else None
-        if app and d.hide(app["id"]):
+        # A popout closes like any other window; only the main window parks.
+        if app and not d.is_popout(w) and d.hide(app["id"]):
             return
     d.close_window(w["address"])
 

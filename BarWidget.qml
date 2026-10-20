@@ -207,12 +207,11 @@ Panel {
     return n > 0 ? " · " + n + " unread" : ""
   }
 
-  // Hyprland's own activewindow events, not ToplevelManager: the foreign-toplevel
-  // "activated" state can go stale when focus falls back after a window leaves.
-  function bareAddress(a) { return String(a || "").toLowerCase().replace(/^0x/, "") }
-  function isFocused(app) {
-    var t = Hyprland.activeToplevel, address = root.addressOf(app.id)
-    return !!t && address !== "" && root.bareAddress(t.address) === root.bareAddress(address)
+  // Focus is deliberately ignored: with focus-follows-mouse, reaching the bar
+  // often focuses another tile on the way.
+  function isOnFocusedWorkspace(id) {
+    var s = root.stateOf(id), ws = Hyprland.focusedWorkspace
+    return s !== null && !!ws && s.workspace === String(ws.name)
   }
 
   // hyprctl hands out addresses as 0x<hex>. Anything else is treated as "no
@@ -295,12 +294,10 @@ Panel {
     root.settleAll()
   }
 
-  // Dock behavior: launch, or bring to the front, or tuck away if already there.
+  // Dock behavior: launch, or bring here, or tuck away if already here.
   function toggleApp(id) {
-    var app = root.appById(id)
-    if (!app) return
-    if (!root.isRunning(id) || root.isHidden(id)) root.showApp(id)
-    else if (root.isFocused(app)) root.hideApp(id)
+    if (!root.appById(id)) return
+    if (root.isOnFocusedWorkspace(id)) root.hideApp(id)
     else root.showApp(id)
   }
 

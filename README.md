@@ -43,7 +43,7 @@ o.bind("SUPER + SHIFT + O", "Outlook", "omarchy-shell -q omatray toggle outlook-
 Left click behaves like a Dock tile:
 
 - hidden: bring it to the current workspace and focus it
-- focused: minimize it
+- on the current workspace (focused or not): minimize it
 - visible on another workspace: move it to the current one
 - not running: launch it
 

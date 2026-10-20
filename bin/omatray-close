@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""SUPER+W / SUPER+ALT+W.
+
+omatray-close          minimize a docked app to the tray; close any other window.
+omatray-close --force  close the focused window unconditionally (a docked app
+                       stays docked and its icon dims).
+
+Reads the dock file directly, so it works with the shell down: if the shell
+cannot be reached, a docked app is closed rather than left unresponsive.
+A malformed dock file counts as "nothing docked", and a popout of a docked
+app closes like any other window.
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import omatray_dock as d  # noqa: E402
+
+
+def main():
+    w = d.active_window()
+    if not w:
+        return
+    if "--force" not in sys.argv[1:]:
+        loaded = d.load_dock()
+        app = d.find_by_class(loaded[1], w.get("class") or "") if loaded else None
+        # A popout closes like any other window; only the main window parks.
+        if app and not d.is_popout(w) and d.park(w["address"]):
+            return
+    d.close_window(w["address"])
+
+
+if __name__ == "__main__":
+    main()

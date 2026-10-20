@@ -1,44 +1,32 @@
 -- Append to ~/.config/hypr/bindings.lua
 
--- Open or focus Teams. Follows Omarchy's SUPER+SHIFT+<letter> convention for
--- applications.
---
--- This delegates to the widget instead of naming a launch command, so the
--- binding works the same whether Teams is the web app or a native client: the
--- widget already knows how to start it (`launchCommand`) and how to find its
--- window (`matchClass`). Duplicating the launch command here is what makes a
--- switch to a native client half-work -- the icon drives the native client
--- while the keybinding keeps opening the web app.
---
--- `show` launches Teams when it is not running, and otherwise brings the
--- existing window to the front, which is what a launch-or-focus binding is
--- for.
-o.bind("SUPER + SHIFT + T", "Teams", "omarchy-shell -q teams show")
+-- Show/hide one docked app, like Cmd+Tab to it and Cmd+H away from it. The id
+-- is the entry's "id" in ~/.config/omarchy/omatray.json. Copy the line for each
+-- app you want a key for.
+-- o.bind("SUPER + SHIFT + O", "Outlook", "omarchy-shell -q omatray toggle outlook-work")
 
--- If you would rather not route the keybinding through the widget, the web-app
--- equivalent is below. Note that omarchy-launch-or-focus builds word-boundary
--- regexes, so "teams.microsoft.com" would NOT match -- there is no word
--- boundary between "com" and "_". For a native client the pattern is its
--- window class and the command is its binary, e.g.
--- `omarchy-launch-or-focus teams-for-linux`.
---
--- o.bind("SUPER + SHIFT + T", "Teams", "omarchy-launch-or-focus-webapp chrome-teams https://teams.microsoft.com")
+-- SUPER+M docks the focused Chromium web app (adds it to the bar and minimizes
+-- it to the tray), or just minimizes it if it is already docked. On any other
+-- window it only shows a notification. M is not bound by stock Omarchy.
+o.bind("SUPER + M", "Dock/minimize app", "omatray-dock")
+-- SUPER+ALT+M removes the focused docked app from the dock (the window stays
+-- open where it is, and SUPER+W closes it normally afterwards). On any other
+-- window it only shows a notification.
+o.bind("SUPER + ALT + M", "Undock app", "omatray-undock")
 
--- Hide/show Teams without quitting it, the equivalent of Cmd+H on macOS.
--- Delegates to the plugin, which parks the window on a special workspace.
-o.bind("SUPER + H", "Hide/show Teams", "omarchy-shell -q teams toggle")
-
--- SUPER+W leaves Teams running in the background instead of closing it: the
--- window is parked and the bar icon stays live. Every other window closes as
--- usual. To actually quit Teams, use the bar icon's menu (right-click).
+-- SUPER+W leaves a docked app running in the background instead of closing it:
+-- the window is parked and the bar icon stays live. Every other window closes
+-- as usual. SUPER+ALT+W closes the focused window for real; a docked app stays
+-- docked and its icon dims. (The bar icon's right-click menu can also quit.)
 --
 -- The unbind is required, not optional. SUPER+W already carries Omarchy's
 -- "Close window" binding, and binding a key twice does not replace the old
--- binding -- it STACKS. Without this line Hyprland runs both, so Teams would
+-- binding -- it STACKS. Without this line Hyprland runs both, so the app would
 -- be hidden and then closed.
 --
--- Requires bin/omarchy-teams-close on your PATH; install.sh puts it in
--- ~/.local/bin. It reads the widget's `matchClass` from shell.json, so it
--- needs no editing when you point the widget at a native client.
+-- Requires bin/omatray-close, omatray-dock, omatray-undock and omatray_dock.py together
+-- on your PATH; install.sh puts them in ~/.local/bin. They read the dock file
+-- directly, so SUPER+W keeps working even when the shell is down.
 hl.unbind("SUPER + W")
-o.bind("SUPER + W", "Close window", "omarchy-teams-close")
+o.bind("SUPER + W", "Close window", "omatray-close")
+o.bind("SUPER + ALT + W", "Force close window", "omatray-close --force")

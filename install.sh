@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
-# Install the Teams plugin from this repo into the live Omarchy shell.
+# Install the omatray plugin from this repo into the live Omarchy shell.
 #
 # The repo is the canonical copy: Omarchy rejects symlinks inside a plugin
 # folder, so the files have to be copied rather than linked.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST="$HOME/.config/omarchy/plugins/io.github.haripako.teams"
+DEST="$HOME/.config/omarchy/plugins/io.github.gumbledore.omatray"
 BINDIR="$HOME/.local/bin"
+
+# Fail fast, before anything live is touched.
+echo "==> Helper tests (offline)"
+"$REPO/tests/run-helpers.sh" >/dev/null 2>&1 || {
+  echo "Helper tests failed; run tests/run-helpers.sh to see why." >&2
+  exit 1
+}
 
 echo "==> Copying plugin to $DEST"
 mkdir -p "$DEST"
@@ -15,7 +22,10 @@ cp "$REPO/manifest.json" "$REPO/BarWidget.qml" "$DEST/"
 
 echo "==> Installing helper scripts to $BINDIR"
 mkdir -p "$BINDIR"
-install -m 0755 "$REPO/bin/omarchy-teams-close" "$BINDIR/omarchy-teams-close"
+for f in omatray-close omatray-dock omatray-undock; do
+  install -m 0755 "$REPO/bin/$f" "$BINDIR/$f"
+done
+install -m 0644 "$REPO/bin/omatray_dock.py" "$BINDIR/omatray_dock.py"
 
 echo "==> Validating"
 omarchy plugin validate "$DEST"
@@ -35,33 +45,33 @@ echo "==> Restarting the Omarchy shell"
 omarchy restart shell
 sleep 5
 
-# Placement only. Deliberately no `omarchy bar set` here: pinning a
-# homeWorkspace is specific to whoever set up the window rules, and imposing
-# one would overwrite a choice the user never made. The README explains it.
+# Placement only. Deliberately no `omarchy bar set` here: it would overwrite
+# settings the user may have chosen. `put` leaves a widget that is already on
+# the bar where it is, so re-running is harmless.
 echo "==> Bar placement"
-omarchy bar put io.github.haripako.teams --section right --index 0 || true
+omarchy bar put io.github.gumbledore.omatray --section right --index 0 || true
 
+# Nothing here can minimize or close a window: `refresh` takes no app, and an
+# unknown id is a logged no-op.
 echo "==> IPC check"
-# `quit` is deliberately absent: it closes the real window.
-for m in toggle show hide refresh; do
-  printf '    %-8s ' "$m"
-  out="$(omarchy-shell teams "$m" 2>&1)" || true
-  [ -z "$out" ] && echo "OK" || echo "$out"
+check() {
+  printf '    %-34s ' "$*"
+  local out rc=0
+  out="$(omarchy-shell omatray "$@" 2>&1)" || rc=$?
+  if [ "$rc" -eq 0 ] && [ -z "$out" ]; then echo "OK"; else echo "FAILED (exit $rc) $out"; fi
   sleep 1
-done
-# The loop ends on `hide`, which would leave Teams parked on the special
-# workspace after every install. Put it back where the user left it.
-omarchy-shell -q teams show || true
+}
+check refresh
+check toggle __omatray_install_check__
 
 cat <<'EOF'
 
-Done. Two things this script deliberately does NOT do, because they append to
-files you also edit by hand:
+Done. One thing this script deliberately does NOT do, because it appends to a
+file you also edit by hand:
 
   - hypr/bindings.snippet.lua   -> append to ~/.config/hypr/bindings.lua
-    (this one now matters: it is what makes SUPER+W hide Teams instead of
-     closing it, via the omarchy-teams-close installed above)
-  - hypr/hyprland.snippet.lua   -> append to the END of ~/.config/hypr/hyprland.lua
+    (SUPER+W minimize/close, SUPER+ALT+W force close, SUPER+M dock/minimize,
+     SUPER+ALT+M undock, via the omatray-* helpers installed above)
 
-After appending either one: hyprctl reload && hyprctl configerrors
+After appending: hyprctl reload && hyprctl configerrors
 EOF

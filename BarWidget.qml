@@ -3,7 +3,6 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
-import Quickshell.Wayland
 import Quickshell.Widgets
 import qs.Commons
 import qs.Ui
@@ -208,10 +207,12 @@ Panel {
     return n > 0 ? " · " + n + " unread" : ""
   }
 
-  readonly property var activeToplevel: ToplevelManager.activeToplevel
+  // Hyprland's own activewindow events, not ToplevelManager: the foreign-toplevel
+  // "activated" state can go stale when focus falls back after a window leaves.
+  function bareAddress(a) { return String(a || "").toLowerCase().replace(/^0x/, "") }
   function isFocused(app) {
-    var t = root.activeToplevel
-    return !!t && String(t.appId || "").toLowerCase() === app.matchClass.toLowerCase()
+    var t = Hyprland.activeToplevel, address = root.addressOf(app.id)
+    return !!t && address !== "" && root.bareAddress(t.address) === root.bareAddress(address)
   }
 
   // hyprctl hands out addresses as 0x<hex>. Anything else is treated as "no
@@ -244,6 +245,12 @@ Panel {
     root.runArgv(["hyprctl", "dispatch", lua])
   }
 
+  // Several dispatchers in one eval run in order. Separate processes can race,
+  // and focusing a window still on the special workspace opens that workspace.
+  function dispatchAll(luas) {
+    root.runArgv(["hyprctl", "eval", luas.map(function(l) { return "hl.dispatch(" + l + ")" }).join(" ")])
+  }
+
   // follow = false: moving a window must never drag the user's view with it.
   function moveLua(address, workspace) {
     return "hl.dsp.window.move({ window = " + root.luaStr("address:" + address)
@@ -274,8 +281,8 @@ Panel {
     var address = root.addressOf(id)
     if (address === "") { root.launchApp(app); return }
     var ws = String(Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1)
-    root.dispatch(root.moveLua(address, ws))
-    root.dispatch("hl.dsp.focus({ window = " + root.luaStr("address:" + address) + " })")
+    root.dispatchAll([root.moveLua(address, ws),
+                      "hl.dsp.focus({ window = " + root.luaStr("address:" + address) + " })"])
     root.settleAll()
   }
 

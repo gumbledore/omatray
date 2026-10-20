@@ -15,7 +15,10 @@ cp "$REPO/manifest.json" "$REPO/BarWidget.qml" "$DEST/"
 
 echo "==> Installing helper scripts to $BINDIR"
 mkdir -p "$BINDIR"
-install -m 0755 "$REPO/bin/omatray-close" "$BINDIR/omatray-close"
+for f in omatray-close omatray-dock omatray-undock; do
+  install -m 0755 "$REPO/bin/$f" "$BINDIR/$f"
+done
+install -m 0644 "$REPO/bin/omatray_dock.py" "$BINDIR/omatray_dock.py"
 
 echo "==> Validating"
 omarchy plugin validate "$DEST"

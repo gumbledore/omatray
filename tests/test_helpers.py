@@ -1,7 +1,7 @@
-"""Fake-PATH tests for bin/omatray-dock and bin/omatray-close.
+"""Fake-PATH tests for bin/omatray-dock, omatray-close and omatray-undock.
 
-To add a case: write a method on HelperTests that calls self.dock() or
-self.close() (optionally with active=window(...), shell_down=True, dock=<text>),
+To add a case: write a method on HelperTests that calls self.dock(),
+self.close() or self.undock() (optionally with active=window(...), shell_down=True, dock=<text>),
 then assert on self.calls() (the stub log) and self.read_dock(). Every case also
 runs the global "no close without a 0x address" check in tearDown.
 """
@@ -107,6 +107,11 @@ class HelperTests(unittest.TestCase):
         if dock is not None:
             self.put_dock(dock)
         self.run_helper("omatray-close", ["--force"] if force else [], active, shell_down)
+
+    def undock(self, active=None, shell_down=False, dock=None):
+        if dock is not None:
+            self.put_dock(dock)
+        self.run_helper("omatray-undock", [], active, shell_down)
 
     def of(self, name):
         return [c for c in self.calls() if c[0] == name]
@@ -251,6 +256,52 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(len(self.closes()), 1)
         self.assertEqual(self.hides(), [])
         self.assertEqual(self.read_text(), text)
+
+    # -- undock --
+    def test_undock_docked_removes_entry_then_close_is_real(self):
+        self.undock(active=window(OUTLOOK_WORK), dock=self.docked_dock())
+        self.assertEqual(self.read_dock(), {"apps": []})
+        self.assertEqual(self.hides() + self.closes() + self.moves(), [])
+        self.assertIn(["omarchy-shell", "-q", "omatray", "refresh"], self.calls())
+        self.close(active=window(OUTLOOK_WORK))
+        self.assertEqual(len(self.closes()), 1)
+        self.assertIn("address:%s" % ADDR, self.closes()[0][2])
+        self.assertEqual(self.hides(), [])
+
+    def test_undock_keeps_other_and_invalid_entries(self):
+        text = json.dumps({"apps": [
+            {"id": "BAD"},
+            {"id": "gmail", "name": "Gmail", "matchClass": GMAIL, "url": "https://mail.google.com"},
+            {"id": "outlook-work", "name": "Outlook", "matchClass": OUTLOOK_WORK, "desktopId": "Outlook"},
+            {"id": "outlook-work", "name": "Dup", "matchClass": "x", "url": "https://x.example"}]})
+        self.undock(active=window(OUTLOOK_WORK), dock=text)
+        self.assertEqual([a["id"] for a in self.read_dock()["apps"]], ["BAD", "gmail"])
+
+    def test_undock_non_docked_notifies_only(self):
+        text = self.docked_dock()
+        self.undock(active=window("Alacritty"), dock=text)
+        self.assertEqual(self.read_text(), text)
+        self.assertEqual(len(self.of("notify-send")), 1)
+        self.assertEqual(self.hides() + self.closes() + self.moves(), [])
+
+    def test_undock_no_window(self):
+        text = self.docked_dock()
+        for out in ("", "{}", json.dumps({"address": "", "class": OUTLOOK_WORK})):
+            self.undock(active=out, dock=text)
+        self.assertEqual(self.read_text(), text)
+        self.assertEqual(len(self.of("notify-send")), 3)
+        self.assertEqual(self.hides() + self.closes() + self.moves(), [])
+
+    def test_undock_malformed_file_untouched(self):
+        for text in ("{ not json", '{"apps": 3}'):
+            self.undock(active=window(OUTLOOK_WORK), dock=text)
+            self.assertEqual(self.read_text(), text)
+        self.assertEqual(len(self.of("notify-send")), 2)
+
+    def test_undock_shell_down_still_edits_file(self):
+        self.undock(active=window(OUTLOOK_WORK), dock=self.docked_dock(), shell_down=True)
+        self.assertEqual(self.read_dock(), {"apps": []})
+        self.assertEqual(self.closes() + self.moves(), [])
 
     # -- module --
     def test_window_class_derivation(self):

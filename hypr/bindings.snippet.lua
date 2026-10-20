@@ -9,7 +9,10 @@
 -- it to the tray), or just minimizes it if it is already docked. On any other
 -- window it only shows a notification. M is not bound by stock Omarchy.
 o.bind("SUPER + M", "Dock/minimize app", "omatray-dock")
--- SUPER + ALT + M is reserved for undocking.
+-- SUPER+ALT+M removes the focused docked app from the dock (the window stays
+-- open where it is, and SUPER+W closes it normally afterwards). On any other
+-- window it only shows a notification.
+o.bind("SUPER + ALT + M", "Undock app", "omatray-undock")
 
 -- SUPER+W leaves a docked app running in the background instead of closing it:
 -- the window is parked and the bar icon stays live. Every other window closes
@@ -21,7 +24,7 @@ o.bind("SUPER + M", "Dock/minimize app", "omatray-dock")
 -- binding -- it STACKS. Without this line Hyprland runs both, so the app would
 -- be hidden and then closed.
 --
--- Requires bin/omatray-close, bin/omatray-dock and bin/omatray_dock.py together
+-- Requires bin/omatray-close, omatray-dock, omatray-undock and omatray_dock.py together
 -- on your PATH; install.sh puts them in ~/.local/bin. They read the dock file
 -- directly, so SUPER+W keeps working even when the shell is down.
 hl.unbind("SUPER + W")

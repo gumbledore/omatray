@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""SUPER+ALT+M: remove the focused docked app from the dock file.
+
+The window is never moved or closed; it just stops being docked, so SUPER+W
+closes it normally afterwards. Reads and writes the dock file directly, so it
+works with the shell down.
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import omatray_dock as d  # noqa: E402
+
+
+def main():
+    w = d.active_window()
+    if not w:
+        d.notify("Nothing to undock", "No focused window.")
+        return
+    loaded = d.load_dock()
+    if loaded is None:
+        d.notify("Dock file is malformed", "Fix or remove %s; nothing was changed." % d.dock_path())
+        return
+    doc, apps = loaded
+    app = d.find_by_class(apps, w.get("class") or "")
+    if app is None:
+        d.notify("Not docked", "This window is not in the dock.")
+        return
+    # Drop every entry with this id, including hand-edited duplicates, so the
+    # widget can't keep showing it. Other (even invalid) entries are preserved.
+    doc["apps"] = [a for a in doc["apps"] if not (isinstance(a, dict) and a.get("id") == app["id"])]
+    d.write_dock(doc)
+    d.shell("refresh")
+    d.notify("Removed from dock", app.get("name") or app["id"])
+
+
+if __name__ == "__main__":
+    main()

@@ -158,6 +158,7 @@ Panel {
   FileView {
     id: dockFile
     path: root.dockPath
+    atomicWrites: true
     watchChanges: true
     printErrors: false
     onFileChanged: reload()
@@ -308,6 +309,22 @@ Panel {
     root.settleAll()
   }
 
+  // Remove the entry from the dock file; the file watch then drops the icon.
+  // A parked window is brought back first so it is never stranded on the tray
+  // workspace. The raw text is re-parsed (not root.apps) so hand-edited entries
+  // the widget rejected survive the write. Malformed file: leave it alone.
+  function undockApp(id) {
+    if (root.isHidden(id)) root.showApp(id)
+    var doc
+    try { doc = JSON.parse(String(dockFile.text() || "")) } catch (e) { doc = null }
+    if (!doc || !Array.isArray(doc.apps)) {
+      console.warn("omatray: undock: dock file is malformed; not changing it")
+      return
+    }
+    doc.apps = doc.apps.filter(function(a) { return !(a && a.id === id) })
+    dockFile.setText(JSON.stringify(doc, null, 2) + "\n")
+  }
+
   function probeSoon() { settleTimer.restart() }
   function settleAll() { root.broadcast("probeSoon") }
 
@@ -386,6 +403,7 @@ Panel {
     function show(id: string): void { if (root.known("show", id)) root.showApp(id) }
     function hide(id: string): void { if (root.known("hide", id)) root.hideApp(id) }
     function quit(id: string): void { if (root.known("quit", id)) root.quitApp(id) }
+    function undock(id: string): void { if (root.known("undock", id)) root.undockApp(id) }
     function menu(id: string): void { if (root.known("menu", id)) root.openMenu(id) }
     function refresh(): void { root.broadcast("refresh") }
   }
@@ -544,7 +562,7 @@ Panel {
         var k = String(t).toLowerCase()
         if (k === "h") { root.menuToggle(); root.close() }
         else if (k === "q") { root.quitApp(root.menuAppId); root.close() }
-        // U (undock) hook: ticket 05 adds `else if (k === "u") { ... }` here, next to its menu Button.
+        else if (k === "u") { root.undockApp(root.menuAppId); root.close() }
       }
 
       Column {
@@ -606,6 +624,18 @@ Panel {
           foreground: Color.urgent
           fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
           onClicked: { root.quitApp(root.menuAppId); root.close() }
+        }
+
+        Button {
+          width: parent.width
+          leftAlign: true
+          bordered: true
+          iconText: String.fromCodePoint(0xF0156)
+          text: "Remove from dock"
+          fontSize: Style.font.bodySmall
+          foreground: root.bar ? root.bar.foreground : Color.foreground
+          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+          onClicked: { root.undockApp(root.menuAppId); root.close() }
         }
       }
     }

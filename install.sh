@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Install the omatray plugin from this repo into the live Omarchy shell.
+# Install this working tree into the live Omarchy shell, for development.
+# A normal install is `omarchy plugin add`, which keeps a git checkout that
+# `omarchy plugin update` can pull.
 #
-# The repo is the canonical copy: Omarchy rejects symlinks inside a plugin
-# folder, so the files have to be copied rather than linked.
+# Omarchy rejects symlinks inside a plugin folder, so the files are copied.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST="$HOME/.config/omarchy/plugins/io.github.gumbledore.omatray"
-BINDIR="$HOME/.local/bin"
 
 # Fail fast, before anything live is touched.
 echo "==> Helper tests (offline)"
@@ -16,16 +16,18 @@ echo "==> Helper tests (offline)"
   exit 1
 }
 
-echo "==> Copying plugin to $DEST"
-mkdir -p "$DEST"
-cp "$REPO/manifest.json" "$REPO/BarWidget.qml" "$DEST/"
+if [ -d "$DEST/.git" ]; then
+  echo "$DEST is managed by 'omarchy plugin'; update it with: omarchy plugin update io.github.gumbledore.omatray" >&2
+  exit 1
+fi
 
-echo "==> Installing helper scripts to $BINDIR"
-mkdir -p "$BINDIR"
+echo "==> Copying plugin to $DEST"
+mkdir -p "$DEST/bin"
+cp "$REPO/manifest.json" "$REPO/BarWidget.qml" "$DEST/"
 for f in omatray-close omatray-dock omatray-undock; do
-  install -m 0755 "$REPO/bin/$f" "$BINDIR/$f"
+  install -m 0755 "$REPO/bin/$f" "$DEST/bin/$f"
 done
-install -m 0644 "$REPO/bin/omatray_dock.py" "$BINDIR/omatray_dock.py"
+install -m 0644 "$REPO/bin/omatray_dock.py" "$DEST/bin/omatray_dock.py"
 
 echo "==> Validating"
 omarchy plugin validate "$DEST"
@@ -71,7 +73,7 @@ file you also edit by hand:
 
   - hypr/bindings.snippet.lua   -> append to ~/.config/hypr/bindings.lua
     (SUPER+W minimize/close, SUPER+ALT+W force close, SUPER+M dock/minimize,
-     SUPER+ALT+M undock, via the omatray-* helpers installed above)
+     SUPER+ALT+M undock, via the helpers in the plugin's bin/)
 
 After appending: hyprctl reload && hyprctl configerrors
 EOF

@@ -10,18 +10,21 @@ icon brings it back.
 ## Install
 
 ```sh
-./install.sh
+omarchy plugin add https://github.com/gumbledore/omatray --enable
 ```
 
-It runs the offline helper tests, copies the plugin and the helpers
-(`omatray-dock`, `omatray-close`, `omatray-undock`, `omatray_dock.py`) to
-`~/.local/bin`, validates the manifest, restarts the shell and puts the widget
-in the bar. It is safe to run again. It does not touch your Hyprland files:
-append `hypr/bindings.snippet.lua` to `~/.config/hypr/bindings.lua`, then
+Then append `hypr/bindings.snippet.lua` to `~/.config/hypr/bindings.lua` and run
 
 ```sh
 hyprctl reload && hyprctl configerrors
 ```
+
+The key helpers live in the plugin's `bin/`, so `omarchy plugin update`
+(or the plugin manager) updates them along with the widget.
+
+For development, `./install.sh` copies this working tree into the plugin folder
+instead: it runs the offline tests, validates, restarts the shell and puts the
+widget in the bar. It refuses to overwrite a git-managed install.
 
 ## Keys
 

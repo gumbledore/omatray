@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.haripako.teams",
-  "name": "Microsoft Teams",
-  "version": "1.2.0",
-  "author": "Haripako",
+  "id": "io.github.gumbledore.omatray",
+  "name": "omatray",
+  "version": "0.1.0",
+  "author": "gumbledore",
   "license": "MIT",
-  "description": "Teams dock-style control: hide/show, unread badge, call presence and auto-DND",
+  "description": "Dock any web app into the bar: minimize to tray, unread badge, show/hide",
   "kinds": [
     "bar-widget"
   ],
@@ -13,65 +13,30 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Microsoft Teams",
-    "description": "Teams icon with unread badge, call presence and hide/show",
+    "displayName": "omatray",
+    "description": "Dock any web app into the bar: minimize to tray, unread badge, show/hide",
     "category": "Status",
     "allowMultiple": false,
     "defaultSection": "right",
     "schema": [
       {
-        "key": "autoDnd",
-        "type": "boolean",
-        "label": "Silence notifications while in a call",
-        "description": "Enable do-not-disturb automatically during Teams calls and restore it afterwards.",
-        "default": true
-      },
-      {
-        "key": "homeWorkspace",
-        "type": "string",
-        "label": "Home workspace",
-        "description": "Workspace to return Teams to when unhiding. Leave empty to follow the active workspace.",
-        "default": ""
-      },
-      {
         "key": "url",
         "type": "string",
-        "label": "Teams URL",
-        "default": "https://teams.microsoft.com"
-      },
-      {
-        "key": "launchCommand",
-        "type": "string",
-        "label": "Launch command",
-        "description": "Command that starts Teams when it is not running. Empty launches the Chromium web app. Set it to a native client's command (for example teams-for-linux) to drive that instead.",
-        "default": ""
+        "label": "Web app URL",
+        "default": "https://web.whatsapp.com"
       },
       {
         "key": "matchClass",
         "type": "string",
         "label": "Window class fragment",
-        "description": "Substring matched against the window class to find the Teams window.",
-        "default": "chrome-teams"
+        "description": "Substring matched against the window class to find the app window.",
+        "default": "chrome-web.whatsapp.com"
       },
       {
         "key": "pollInterval",
         "type": "integer",
         "label": "Window poll interval (ms)",
         "default": 2000
-      },
-      {
-        "key": "micApp",
-        "type": "string",
-        "label": "Microphone owner",
-        "description": "Process name a capture stream must belong to before it counts as a Teams call. Teams runs inside Chromium, whose audio lives in a separate process from the window.",
-        "default": "chromium"
-      },
-      {
-        "key": "notificationsPlugin",
-        "type": "string",
-        "label": "Notifications plugin id",
-        "description": "Leave empty to detect the notification service automatically. Set it only if auto-detection picks the wrong one.",
-        "default": ""
       }
     ]
   }

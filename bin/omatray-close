@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# SUPER+W with macOS semantics for Teams.
+# SUPER+W with macOS semantics for the docked web app.
 #
-# Closing Teams hides it instead of quitting, so it keeps running in the
+# Closing the app hides it instead of quitting, so it keeps running in the
 # background and stays reachable from the bar icon. Every other window closes
-# as usual. Quitting Teams for real is right-click on its bar icon.
+# as usual. Quitting for real is right-click on its bar icon.
 set -uo pipefail
 
 # The class fragment has to agree with the widget's `matchClass`, or SUPER+W
-# stops recognising Teams and closes it for real instead of hiding it. Rather
+# stops recognizing the app and closes it for real instead of hiding it. Rather
 # than hardcode a default that is only right for the web app, read the setting
-# the widget itself uses. Precedence: TEAMS_MATCH_CLASS, then shell.json, then
-# the web app's class.
+# the widget itself uses. Precedence: OMATRAY_MATCH_CLASS, then shell.json, then
+# the default web app's class.
 #
 # python3 is already a dependency of this script, so this adds none.
-match="${TEAMS_MATCH_CLASS:-}"
+match="${OMATRAY_MATCH_CLASS:-}"
 
 if [[ -z $match ]]; then
   match="$(python3 - <<'PY' 2>/dev/null
@@ -32,7 +32,7 @@ for section in layout.values():
     if not isinstance(section, list):
         continue
     for entry in section:
-        if isinstance(entry, dict) and entry.get("id") == "io.github.haripako.teams":
+        if isinstance(entry, dict) and entry.get("id") == "io.github.gumbledore.omatray":
             value = entry.get("matchClass")
             if isinstance(value, str) and value:
                 print(value)
@@ -41,7 +41,7 @@ PY
 )"
 fi
 
-match="${match:-chrome-teams}"
+match="${match:-chrome-web.whatsapp.com}"
 
 read -r class addr <<<"$(hyprctl activewindow -j 2>/dev/null | python3 -c '
 import json, sys
@@ -53,7 +53,7 @@ print(w.get("class", "") or "-", w.get("address", "") or "-")
 ')"
 
 if [[ "${class,,}" == *"${match,,}"* ]]; then
-  exec omarchy-shell -q teams hide
+  exec omarchy-shell -q omatray hide
 fi
 
 # Guard the address rather than letting it through empty: hl.dsp.window.close()

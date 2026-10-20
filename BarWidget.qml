@@ -3,11 +3,10 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Wayland
-import Quickshell.Services.Pipewire
 import qs.Commons
 import qs.Ui
 
-// Dock-style Teams control, modelled on the macOS app:
+// Dock-style control for a Chromium web app, modelled on the macOS Dock:
 //   - the icon is always present, like a Dock tile
 //   - a badge carries the unread count, read from the window title
 //   - hiding parks the window on a special workspace instead of quitting,
@@ -17,11 +16,11 @@ import qs.Ui
 //     right-click that closes the app without asking is not a thing anyone expects
 Panel {
   id: root
-  moduleName: "io.github.haripako.teams"
-  ipcTarget: "teams"
+  moduleName: "io.github.gumbledore.omatray"
+  ipcTarget: "omatray"
   // Panel's built-in IPC would claim show/hide/toggle for the *popup*. Those
-  // names are already spoken for here -- SUPER+H and omarchy-teams-close call
-  // them meaning the Teams *window* -- so this widget keeps its own handler.
+  // names are already spoken for here -- omatray-close calls them meaning the
+  // app *window* -- so this widget keeps its own handler.
   manageIpc: false
 
   // Panel, unlike BarWidget, has no broadcast(). An IPC target routes to a
@@ -48,43 +47,20 @@ Panel {
   }
 
   readonly property string appUrl: settingMatching(
-    "url", "https://teams.microsoft.com", /^https?:\/\/[A-Za-z0-9._~:\/?#\[\]@!$&'()*+,;=%-]+$/)
+    "url", "https://web.whatsapp.com", /^https?:\/\/[A-Za-z0-9._~:\/?#\[\]@!$&'()*+,;=%-]+$/)
 
   // Must be non-empty: this is used with indexOf(), and "" is a substring of
   // every string, so an empty fragment would match every window on the system.
   readonly property string matchClass: settingMatching(
-    "matchClass", "chrome-teams", /^[A-Za-z0-9._-]+$/).toLowerCase()
+    "matchClass", "chrome-web.whatsapp.com", /^[A-Za-z0-9._-]+$/).toLowerCase()
 
-  // How to start Teams when it is not running. Empty means the Chromium web app,
-  // launched through Omarchy's helper. Set it to a command (a string, or an argv
-  // array for arguments) to drive a native client instead -- teams-for-linux,
-  // say. Unlike the settings above this one IS meant to name a program, so the
-  // check is only that it looks like a command: it runs through the same argv
-  // path as everything else, so no shell ever parses it.
-  readonly property var launchCommand: setting("launchCommand", "")
-
+  // Until the dock list exists, the widget drives this one web app.
   function launchArgv() {
-    var lc = root.launchCommand
-    var argv = []
-    if (typeof lc === "string") {
-      if (lc !== "") argv = [lc]
-    } else if (Array.isArray(lc)) {
-      argv = lc.map(function(a) { return String(a) })
-    }
-    argv = argv.filter(function(a) { return a !== "" && !/[\r\n]/.test(a) })
-    if (argv.length) return argv
     return ["omarchy-launch-or-focus-webapp", root.matchClass, root.appUrl]
   }
 
-  readonly property bool autoDnd: setting("autoDnd", true) === true
   readonly property int pollInterval: Math.max(500, Number(setting("pollInterval", 2000)))
-  readonly property string hideWorkspace: "special:teamshidden"
-
-  // When set, unhiding returns Teams to this workspace instead of following
-  // you around. Needed once a window rule pins Teams to a fixed workspace,
-  // otherwise showing it would drag it off its assigned monitor.
-  readonly property string homeWorkspace: settingMatching(
-    "homeWorkspace", "", /^$|^(special:)?[A-Za-z0-9_-]+$/)
+  readonly property string hideWorkspace: "special:omatray"
 
   // ---- window state, refreshed from hyprctl ----
   property string winAddress: ""
@@ -96,10 +72,10 @@ Panel {
 
   // Forces a count so the badge can be looked at on demand. Otherwise the only
   // way to see it is to wait for somebody to message you, which is how it went
-  // unverified for so long. `omarchy bar set io.github.haripako.teams debugUnread 3`.
+  // unverified for so long. `omarchy bar set io.github.gumbledore.omatray debugUnread 3`.
   readonly property int debugUnread: Math.max(0, Number(setting("debugUnread", 0)))
 
-  // Teams puts the unread count at the head of the title: "(3) Chat | ..."
+  // Many web apps put the unread count at the head of the title: "(3) Chat | ..."
   readonly property int unread: {
     if (root.debugUnread > 0) return root.debugUnread
     var m = /^\((\d+)\)/.exec(root.winTitle)
@@ -113,113 +89,6 @@ Panel {
     return String(t.appId || "").toLowerCase().indexOf(root.matchClass) >= 0
   }
 
-  // ---- microphone / call detection ----
-  readonly property var micSource: Pipewire.defaultAudioSource
-  readonly property bool micMuted: micSource && micSource.audio ? micSource.audio.muted : false
-  readonly property var pwNodes: Pipewire.nodes ? Pipewire.nodes.values : []
-
-  // Which process a capture stream must belong to before it counts as a call.
-  // Teams runs inside Chromium, and Chromium keeps its audio in a *separate*
-  // process from the window, so the window PID is useless for matching --
-  // the binary name is the only reliable signal.
-  readonly property string micApp: String(setting("micApp", "chromium")).toLowerCase()
-
-  // Every live capture stream, tracked so their `properties` maps stay populated.
-  readonly property var captureStreams: {
-    var out = []
-    for (var i = 0; i < root.pwNodes.length; i++) {
-      var n = root.pwNodes[i]
-      if (n && n.isStream && n.isSink === false) out.push(n)
-    }
-    return out
-  }
-
-  PwObjectTracker { objects: root.captureStreams }
-
-  // A capture stream belonging to Teams' browser means a call is in progress.
-  // Filtering by process matters: without it *any* app touching the microphone
-  // (a recorder, Zoom, OBS) would flip the widget into "in a call" and force
-  // do-not-disturb on. Mute state is deliberately ignored -- muted-in-a-meeting
-  // is still in a meeting.
-  readonly property bool inCall: {
-    if (!root.running) return false
-    for (var i = 0; i < root.captureStreams.length; i++) {
-      var props = root.captureStreams[i].properties || {}
-      var who = String(props["application.process.binary"]
-                       || props["application.name"] || "").toLowerCase()
-      if (who.indexOf(root.micApp) >= 0) return true
-    }
-    return false
-  }
-
-  PwObjectTracker { objects: root.micSource ? [root.micSource] : [] }
-
-  // ---- automatic do-not-disturb ----
-  // Looking the notification service up by a fixed id is a trap. Cloning the
-  // stock plugin gives the clone a new id and *disables* the original, so
-  // "omarchy.notifications" then resolves to null and auto-DND silently does
-  // nothing -- no error, no dot, just no DND. Find the service by the
-  // capability we actually need instead, and let a setting force one id.
-  readonly property string notificationsPlugin: String(setting("notificationsPlugin", ""))
-
-  function findNotifications() {
-    var shell = root.bar ? root.bar.shell : null
-    if (!shell || typeof shell.serviceFor !== "function") return null
-
-    if (root.notificationsPlugin !== "")
-      return shell.serviceFor(root.notificationsPlugin)
-
-    var registry = shell.pluginRegistry
-    var plugins = registry ? registry.installedPlugins : null
-    if (!plugins) return null
-    for (var id in plugins) {
-      var svc = shell.serviceFor(id)
-      if (svc && typeof svc.setDoNotDisturb === "function") return svc
-    }
-    return null
-  }
-
-  property bool dndHeldByUs: false
-  property bool dndWasOn: false
-
-  // Give do-not-disturb back, if and only if this widget is the one holding it.
-  // Every path out of "we turned DND on" has to come through here, because a
-  // suppressed notification the user never asked for and cannot see is the
-  // worst failure this widget has available to it.
-  function releaseDnd() {
-    if (!root.dndHeldByUs) return
-    root.dndHeldByUs = false
-    // Only undo what we did; a DND the user turned on themselves stays on.
-    if (root.dndWasOn) return
-    var notifications = root.findNotifications()
-    if (notifications) notifications.setDoNotDisturb(false)
-  }
-
-  onInCallChanged: {
-    if (root.inCall) {
-      if (!root.autoDnd || root.dndHeldByUs) return
-      // Resolved per transition rather than cached: services come and go as
-      // plugins are enabled, and a null captured at startup would be permanent.
-      var notifications = root.findNotifications()
-      if (!notifications) return
-      root.dndWasOn = notifications.doNotDisturb === true
-      root.dndHeldByUs = true
-      if (!root.dndWasOn) notifications.setDoNotDisturb(true)
-    } else {
-      // Unconditional: autoDnd may have been switched off mid-call, and the
-      // old code returned early on that check and left DND on for good.
-      root.releaseDnd()
-    }
-  }
-
-  // Turning the setting off during a call used to strand DND on. Whoever
-  // disables the feature is asking for it to stop acting -- including undoing
-  // what it already did.
-  onAutoDndChanged: if (!root.autoDnd) root.releaseDnd()
-
-  // A shell restart or `omarchy plugin disable` destroys the widget. Without
-  // this, it takes the user's notifications with it.
-  Component.onDestruction: root.releaseDnd()
 
   // ---- actions ----
   // Commands are run as an argv vector, never as a shell string. bar.run() goes
@@ -256,21 +125,15 @@ Panel {
       probeSoon()
       return
     }
-    var target = root.homeWorkspace !== ""
-               ? root.homeWorkspace
-               : String(Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1)
+    var target = String(Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1)
 
     root.dispatch(root.moveLua(target))
-    // Sending it to a fixed workspace is pointless if the eye stays elsewhere,
-    // so follow it over before focusing the window itself.
-    if (root.homeWorkspace !== "")
-      root.dispatch("hl.dsp.focus({ workspace = " + root.luaStr(target) + " })")
     root.dispatch("hl.dsp.focus({ window = " + root.luaStr("address:" + root.winAddress) + " })")
 
     probeSoon()
   }
 
-  // Actually quit Teams, as opposed to parking it. This is the only way out
+  // Actually quit the app, as opposed to parking it. This is the only way out
   // now that SUPER+W hides instead of closing, so it lives on right-click.
   //
   // The address guard is not paranoia: hl.dsp.window.close() falls back to the
@@ -296,10 +159,6 @@ Panel {
     else showApp()
   }
 
-  function toggleMic() {
-    if (root.micSource && root.micSource.audio)
-      root.micSource.audio.muted = !root.micSource.audio.muted
-  }
 
   function probeSoon() { settleTimer.restart() }
 
@@ -351,7 +210,7 @@ Panel {
   }
 
   IpcHandler {
-    target: "teams"
+    target: "omatray"
     function toggle(): void { root.broadcast("toggleApp") }
     function show(): void { root.broadcast("showApp") }
     function hide(): void { root.broadcast("hideApp") }
@@ -368,22 +227,17 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: String.fromCodePoint(0xF02BB) // nf-md-microsoft_teams
-    // Reserve the accent tint for a live call; "running" is already carried
-    // by the presence dot, the way a macOS Dock tile does it.
-    active: root.inCall
+    text: String.fromCodePoint(0xF0AEE) // nf-md-dock_window
     opacity: root.running ? 1.0 : 0.45
     tooltipText: {
-      if (!root.running) return "Teams — not running (click to open)"
+      if (!root.running) return "omatray — not running (click to open)"
       var bits = []
-      bits.push(root.hidden ? "Teams — hidden" : "Teams")
+      bits.push(root.hidden ? "omatray — hidden" : "omatray")
       if (root.unread > 0) bits.push(root.unread + " unread")
-      if (root.inCall) bits.push(root.micMuted ? "in a call (mic muted)" : "in a call")
       return bits.join(" · ")
     }
     onPressed: function(b) {
-      if (b === Qt.MiddleButton) root.toggleMic()
-      else if (b === Qt.RightButton) root.toggle()
+      if (b === Qt.RightButton) root.toggle()
       else root.toggleApp()
     }
 
@@ -399,7 +253,6 @@ Panel {
     if (!root.running) return "Not running"
     var bits = [root.hidden ? "Hidden" : "Visible"]
     if (root.unread > 0) bits.push(root.unread + " unread")
-    if (root.inCall) bits.push(root.micMuted ? "in a call · mic muted" : "in a call")
     return bits.join(" · ")
   }
 
@@ -421,7 +274,6 @@ Panel {
       onTextKey: function(t) {
         var k = String(t).toLowerCase()
         if (k === "h") { root.toggleApp(); root.close() }
-        else if (k === "m") root.toggleMic()
         else if (k === "q") { root.quitApp(); root.close() }
       }
 
@@ -432,13 +284,13 @@ Panel {
         anchors.top: parent.top
         spacing: Style.space(10)
 
-        // Header: what Teams is doing right now.
+        // Header: what the app is doing right now.
         Column {
           width: parent.width
           spacing: Style.space(2)
 
           Text {
-            text: "Microsoft Teams"
+            text: "omatray"
             color: root.bar ? root.bar.foreground : Color.foreground
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.body
@@ -462,7 +314,7 @@ Panel {
           bordered: true
           enabled: root.running
           iconText: root.hidden ? String.fromCodePoint(0xF06D0) : String.fromCodePoint(0xF06D1)
-          text: root.hidden ? "Show Teams" : "Hide Teams"
+          text: root.hidden ? "Show app" : "Hide app"
           fontSize: Style.font.bodySmall
           foreground: root.bar ? root.bar.foreground : Color.foreground
           fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
@@ -473,26 +325,9 @@ Panel {
           width: parent.width
           leftAlign: true
           bordered: true
-          enabled: root.micSource !== null
-          iconText: root.micMuted ? String.fromCodePoint(0xF036D) : String.fromCodePoint(0xF036C)
-          text: root.micMuted ? "Unmute microphone" : "Mute microphone"
-          fontSize: Style.font.bodySmall
-          foreground: root.bar ? root.bar.foreground : Color.foreground
-          fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
-          // Deliberately leaves the menu open: muting mid-call is something you
-          // want to see confirmed, and the label flips in place.
-          onClicked: root.toggleMic()
-        }
-
-        PanelSeparator { width: parent.width }
-
-        Button {
-          width: parent.width
-          leftAlign: true
-          bordered: true
           enabled: root.running
           iconText: String.fromCodePoint(0xF0206)
-          text: "Quit Teams"
+          text: "Quit app"
           fontSize: Style.font.bodySmall
           // Urgent, because this one actually kills the app rather than parking it.
           foreground: Color.urgent
@@ -536,12 +371,7 @@ Panel {
     }
   }
 
-  // Presence dot: accent when available, urgent while in a call.
-  //
-  // Colour alone cannot carry that distinction. Plenty of Omarchy themes make
-  // accent and urgent near-identical -- the one this was built against resolves
-  // them to #b59790 and #c38b7b, two dusty roses that are the same dot at 7px.
-  // So the call state also grows and pulses, channels no palette can flatten.
+  // Presence dot: the app has a visible window.
   Rectangle {
     id: presenceDot
     visible: root.running && !root.hidden
@@ -549,26 +379,12 @@ Panel {
     anchors.bottom: parent.bottom
     anchors.rightMargin: Style.space(2)
     anchors.bottomMargin: Style.space(3)
-    width: root.inCall ? Style.space(10) : Style.space(7)
+    width: Style.space(7)
     height: width
     radius: width / 2
-    color: root.inCall ? Color.urgent : Color.accent
+    color: Color.accent
     border.width: 1
     border.color: Color.background
     z: 2
-
-    Behavior on width {
-      NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
-    }
-
-    SequentialAnimation on opacity {
-      running: root.inCall
-      loops: Animation.Infinite
-      // The animation owns `opacity` only while it runs; on stop it leaves the
-      // dot wherever the cycle happened to be, so put it back to full.
-      onRunningChanged: if (!running) presenceDot.opacity = 1.0
-      NumberAnimation { to: 0.35; duration: 700; easing.type: Easing.InOutSine }
-      NumberAnimation { to: 1.0; duration: 700; easing.type: Easing.InOutSine }
-    }
   }
 }

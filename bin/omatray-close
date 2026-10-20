@@ -1,63 +1,32 @@
-#!/usr/bin/env bash
-# SUPER+W with macOS semantics for the docked web app.
-#
-# Closing the app hides it instead of quitting, so it keeps running in the
-# background and stays reachable from the bar icon. Every other window closes
-# as usual. Quitting for real is right-click on its bar icon.
-set -uo pipefail
+#!/usr/bin/env python3
+"""SUPER+W / SUPER+ALT+W.
 
-# The class fragment has to agree with the widget's `matchClass`, or SUPER+W
-# stops recognizing the app and closes it for real instead of hiding it. Rather
-# than hardcode a default that is only right for the web app, read the setting
-# the widget itself uses. Precedence: OMATRAY_MATCH_CLASS, then shell.json, then
-# the default web app's class.
-#
-# python3 is already a dependency of this script, so this adds none.
-match="${OMATRAY_MATCH_CLASS:-}"
+omatray-close          minimize a docked app to the tray; close any other window.
+omatray-close --force  close the focused window unconditionally (a docked app
+                       stays docked and its icon dims).
 
-if [[ -z $match ]]; then
-  match="$(python3 - <<'PY' 2>/dev/null
-import json, os, pathlib
+Reads the dock file directly, so it works with the shell down: if the shell
+cannot be reached, a docked app is closed rather than left unresponsive.
+A malformed dock file counts as "nothing docked".
+"""
+import os
+import sys
 
-cfg = pathlib.Path(os.environ.get("XDG_CONFIG_HOME") or
-                   pathlib.Path.home() / ".config") / "omarchy" / "shell.json"
-try:
-    layout = json.loads(cfg.read_text()).get("bar", {}).get("layout", {})
-except (OSError, ValueError, AttributeError):
-    raise SystemExit
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import omatray_dock as d  # noqa: E402
 
-# Settings live inline as siblings of "id": the shell copies every key except
-# "id" into the widget's settings.
-for section in layout.values():
-    if not isinstance(section, list):
-        continue
-    for entry in section:
-        if isinstance(entry, dict) and entry.get("id") == "io.github.gumbledore.omatray":
-            value = entry.get("matchClass")
-            if isinstance(value, str) and value:
-                print(value)
-            raise SystemExit
-PY
-)"
-fi
 
-match="${match:-chrome-web.whatsapp.com}"
+def main():
+    w = d.active_window()
+    if not w:
+        return
+    if "--force" not in sys.argv[1:]:
+        loaded = d.load_dock()
+        app = d.find_by_class(loaded[1], w.get("class") or "") if loaded else None
+        if app and d.hide(app["id"]):
+            return
+    d.close_window(w["address"])
 
-read -r class addr <<<"$(hyprctl activewindow -j 2>/dev/null | python3 -c '
-import json, sys
-try:
-    w = json.load(sys.stdin) or {}
-except Exception:
-    w = {}
-print(w.get("class", "") or "-", w.get("address", "") or "-")
-')"
 
-if [[ "${class,,}" == *"${match,,}"* ]]; then
-  exec omarchy-shell -q omatray hide
-fi
-
-# Guard the address rather than letting it through empty: hl.dsp.window.close()
-# silently falls back to the *active* window when handed "address:", which turns
-# a no-op into closing whatever the user is looking at.
-[[ "$addr" == "-" ]] && exit 0
-exec hyprctl dispatch "hl.dsp.window.close({ window = \"address:$addr\" })"
+if __name__ == "__main__":
+    main()

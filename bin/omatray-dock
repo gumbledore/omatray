@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""SUPER+M: minimize the focused docked app, or dock the focused web app first."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import omatray_dock as d  # noqa: E402
+
+
+def minimize(app_id, address, fresh):
+    # A fresh entry may not have reached the widget yet, and the widget treats an
+    # unknown id as a successful no-op, so `hide` can't be trusted to park it.
+    # Park the window directly instead and let the widget pick up both the entry
+    # and the window on its next probe. Docking never closes anything.
+    if fresh:
+        d.move_to_hidden(address)
+        d.shell("refresh")
+    elif not d.hide(app_id):
+        d.move_to_hidden(address)
+
+
+def main():
+    w = d.active_window()
+    if not w:
+        d.notify("Nothing to dock", "No focused window.")
+        return
+    cls = w.get("class") or ""
+    if not cls.startswith("chrome-"):
+        d.notify("Can't dock this window", "Only Chromium web apps can be docked.")
+        return
+    loaded = d.load_dock()
+    if loaded is None:
+        d.notify("Dock file is malformed", "Fix or remove %s; nothing was changed." % d.dock_path())
+        return
+    doc, apps = loaded
+    app = d.find_by_class(apps, cls)
+    fresh = app is None
+    if fresh:
+        taken = {a.get("id") for a in doc["apps"] if isinstance(a, dict)}
+        entry = d.entry_from_class(cls, taken)
+        if entry is None:
+            d.notify("Can't dock this window", "No web-app launcher found for %s." % cls)
+            return
+        doc["apps"].append(entry)
+        d.write_dock(doc)
+        app = entry
+    minimize(app["id"], w["address"], fresh)
+
+
+if __name__ == "__main__":
+    main()

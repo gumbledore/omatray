@@ -20,19 +20,6 @@
     "defaultSection": "right",
     "schema": [
       {
-        "key": "url",
-        "type": "string",
-        "label": "Web app URL",
-        "default": "https://web.whatsapp.com"
-      },
-      {
-        "key": "matchClass",
-        "type": "string",
-        "label": "Window class fragment",
-        "description": "Substring matched against the window class to find the app window.",
-        "default": "chrome-web.whatsapp.com"
-      },
-      {
         "key": "pollInterval",
         "type": "integer",
         "label": "Window poll interval (ms)",

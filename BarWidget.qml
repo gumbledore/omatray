@@ -75,7 +75,7 @@ Panel {
     else if (/^[A-Za-z0-9._+-]+$/.test(raw)) icon = { kind: "theme", value: raw }
     else if (raw !== "" && Array.from(raw).length === 1 && !/[\s\u0000-\u001f\u007f]/.test(raw))
       icon = { kind: "glyph", value: raw }
-    // Carried through for the badge work; never compiled here.
+    // Carried as text; compiled by applyDock (see compileUnread).
     var unreadPattern = str(a.unreadPattern)
     if (unreadPattern.length > 128) unreadPattern = ""
     return { app: { id: id, name: name, matchClass: mc, desktopId: desktopId, url: url,
@@ -98,6 +98,36 @@ Panel {
   }
   // dock-validate:end
 
+  // ---- unread count ----
+  // Web apps put the count in the window title. Default: the first "(N)"
+  // anywhere ("Inbox (3) - ..." and "(3) Chat | ..." both read 3). A per-app
+  // unreadPattern replaces it; it needs one capture group holding digits.
+  //
+  // unread:begin (pure; exercised from node by extracting this block)
+  function compileUnread(pattern) {
+    var def = /\((\d+)\)/
+    if (pattern === "") return { re: def, bad: false }
+    try {
+      var re = new RegExp(pattern)
+      // Appending an always-matching alternative exposes the group count.
+      if (new RegExp("(?:" + pattern + ")|").exec("").length < 2) return { re: def, bad: true }
+      return { re: re, bad: false }
+    } catch (e) {
+      return { re: def, bad: true }
+    }
+  }
+
+  // A capture that is not digits falls back to the default for that title.
+  function unreadCount(re, title) {
+    var m = re.exec(title)
+    if (m && /^\d+$/.test(m[1])) return parseInt(m[1], 10)
+    if (m) m = /\((\d+)\)/.exec(title)
+    return m ? parseInt(m[1], 10) : 0
+  }
+
+  function badgeText(n) { return n > 99 ? "99+" : String(n) }
+  // unread:end
+
   readonly property string dockPath: {
     var xdg = Quickshell.env("XDG_CONFIG_HOME")
     var base = xdg ? xdg : Quickshell.env("HOME") + "/.config"
@@ -114,6 +144,13 @@ Panel {
     root.lastDockText = text
     var r = root.parseDock(text)
     for (var i = 0; i < r.warnings.length; i++) console.warn("omatray: " + root.dockPath + ": " + r.warnings[i])
+    // Compiled once per (re)load, not per title. Warns once, since applyDock
+    // only runs when the file text changed.
+    for (var j = 0; j < r.apps.length; j++) {
+      var c = root.compileUnread(r.apps[j].unreadPattern)
+      if (c.bad) console.warn("omatray: " + r.apps[j].id + ": unreadPattern needs one capture group and must be a valid regex; using the default")
+      r.apps[j].unreadRe = c.re
+    }
     root.apps = r.apps
     root.probeSoon()
   }
@@ -149,16 +186,25 @@ Panel {
     return s !== null && s.workspace === root.hideWorkspace
   }
 
-  // Forces a count so the badge can be looked at on demand.
+  // Forces this count onto every docked app so the badge can be looked at on
+  // demand (0 = off). Deliberately a shell.json setting, not in the manifest
+  // schema: it is a debugging aid, not something to offer in the settings UI.
   // `omarchy bar set io.github.gumbledore.omatray debugUnread 3`.
   readonly property int debugUnread: Math.max(0, Number(setting("debugUnread", 0)))
 
-  // Many web apps put the unread count in the title: "(3) Chat | ..."
   function unreadOf(id) {
     if (root.debugUnread > 0) return root.debugUnread
-    var s = root.stateOf(id)
-    var m = s ? /\((\d+)\)/.exec(s.title) : null
-    return m ? parseInt(m[1], 10) : 0
+    var s = root.stateOf(id), app = root.appById(id)
+    return s && app ? root.unreadCount(app.unreadRe, s.title) : 0
+  }
+
+  // One wording for tooltip and menu header so they cannot drift apart.
+  function stateWord(id) {
+    return !root.isRunning(id) ? "not running" : root.isHidden(id) ? "hidden" : "visible"
+  }
+  function unreadSuffix(id) {
+    var n = root.unreadOf(id)
+    return n > 0 ? " · " + n + " unread" : ""
   }
 
   readonly property var activeToplevel: ToplevelManager.activeToplevel
@@ -381,12 +427,8 @@ Panel {
                 ? tile.app.icon.value.codePointAt(0) : root.genericGlyph)
           iconComponent: tile.iconUrl !== "" ? imageIcon : null
           opacity: tile.running ? 1.0 : 0.45
-          tooltipText: {
-            if (!tile.running) return tile.app.name + " — not running (click to open)"
-            var bits = [tile.hidden ? tile.app.name + " — hidden" : tile.app.name]
-            if (tile.unread > 0) bits.push(tile.unread + " unread")
-            return bits.join(" · ")
-          }
+          tooltipText: tile.app.name + " — " + root.stateWord(tile.app.id)
+            + (tile.running ? "" : " (click to open)") + root.unreadSuffix(tile.app.id)
           onPressed: function(b) {
             if (b === Qt.RightButton) root.openMenu(tile.app.id)
             else root.toggleApp(tile.app.id)
@@ -426,7 +468,7 @@ Panel {
           Text {
             id: badgeLabel
             anchors.centerIn: parent
-            text: tile.unread > 99 ? "99+" : String(tile.unread)
+            text: root.badgeText(tile.unread)
             color: Color.background
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Math.max(7, Style.font.caption - 3)
@@ -479,12 +521,8 @@ Panel {
   }
 
   readonly property string stateLine: {
-    var id = root.menuAppId
-    if (!root.isRunning(id)) return "Not running"
-    var bits = [root.isHidden(id) ? "Hidden" : "Visible"]
-    var n = root.unreadOf(id)
-    if (n > 0) bits.push(n + " unread")
-    return bits.join(" · ")
+    var id = root.menuAppId, w = root.stateWord(id)
+    return w.charAt(0).toUpperCase() + w.slice(1) + root.unreadSuffix(id)
   }
 
   KeyboardPanel {
@@ -506,6 +544,7 @@ Panel {
         var k = String(t).toLowerCase()
         if (k === "h") { root.menuToggle(); root.close() }
         else if (k === "q") { root.quitApp(root.menuAppId); root.close() }
+        // U (undock) hook: ticket 05 adds `else if (k === "u") { ... }` here, next to its menu Button.
       }
 
       Column {

@@ -295,8 +295,18 @@ Panel {
   }
 
   // Dock behavior: launch, or bring here, or tuck away if already here.
+  // Decided on a fresh probe, so a window moved since the last poll is not
+  // judged by where it used to be.
+  property string pendingToggle: ""
   function toggleApp(id) {
     if (!root.appById(id)) return
+    root.pendingToggle = id
+    if (!probe.running) probe.running = true
+  }
+  function runPendingToggle() {
+    var id = root.pendingToggle
+    root.pendingToggle = ""
+    if (id === "" || !root.appById(id)) return
     if (root.isOnFocusedWorkspace(id)) root.hideApp(id)
     else root.showApp(id)
   }
@@ -366,7 +376,10 @@ Panel {
     id: probe
     command: ["hyprctl", "clients", "-j"]
     stdout: StdioCollector {
-      onStreamFinished: root.applyClients(String(text || ""))
+      onStreamFinished: {
+        root.applyClients(String(text || ""))
+        root.runPendingToggle()
+      }
     }
   }
 

@@ -9,6 +9,13 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST="$HOME/.config/omarchy/plugins/io.github.gumbledore.omatray"
 BINDIR="$HOME/.local/bin"
 
+# Fail fast, before anything live is touched.
+echo "==> Helper tests (offline)"
+"$REPO/tests/run-helpers.sh" >/dev/null 2>&1 || {
+  echo "Helper tests failed; run tests/run-helpers.sh to see why." >&2
+  exit 1
+}
+
 echo "==> Copying plugin to $DEST"
 mkdir -p "$DEST"
 cp "$REPO/manifest.json" "$REPO/BarWidget.qml" "$DEST/"
@@ -39,21 +46,23 @@ omarchy restart shell
 sleep 5
 
 # Placement only. Deliberately no `omarchy bar set` here: it would overwrite
-# settings the user may have chosen.
+# settings the user may have chosen. `put` leaves a widget that is already on
+# the bar where it is, so re-running is harmless.
 echo "==> Bar placement"
 omarchy bar put io.github.gumbledore.omatray --section right --index 0 || true
 
+# Nothing here can minimize or close a window: `refresh` takes no app, and an
+# unknown id is a logged no-op.
 echo "==> IPC check"
-# `quit` is deliberately absent: it closes the real window.
-for m in toggle show hide refresh; do
-  printf '    %-8s ' "$m"
-  out="$(omarchy-shell omatray "$m" 2>&1)" || true
-  [ -z "$out" ] && echo "OK" || echo "$out"
+check() {
+  printf '    %-34s ' "$*"
+  local out rc=0
+  out="$(omarchy-shell omatray "$@" 2>&1)" || rc=$?
+  if [ "$rc" -eq 0 ] && [ -z "$out" ]; then echo "OK"; else echo "FAILED (exit $rc) $out"; fi
   sleep 1
-done
-# The loop ends on `hide`, which would leave the app parked on the special
-# workspace after every install. Put it back where the user left it.
-omarchy-shell -q omatray show || true
+}
+check refresh
+check toggle __omatray_install_check__
 
 cat <<'EOF'
 
@@ -61,8 +70,8 @@ Done. One thing this script deliberately does NOT do, because it appends to a
 file you also edit by hand:
 
   - hypr/bindings.snippet.lua   -> append to ~/.config/hypr/bindings.lua
-    (this is what makes SUPER+W hide the app instead of closing it, via the
-     omatray-close installed above)
+    (SUPER+W minimize/close, SUPER+ALT+W force close, SUPER+M dock/minimize,
+     SUPER+ALT+M undock, via the omatray-* helpers installed above)
 
 After appending: hyprctl reload && hyprctl configerrors
 EOF

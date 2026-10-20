@@ -300,9 +300,17 @@ def ipc(*args):
     return run(["omarchy-shell", "-q", "omatray", *args])
 
 
-def hide(app_id):
-    """Minimize through the widget. True when the shell accepted the command."""
-    return ipc("hide", app_id) == 0
+def park(address):
+    """Minimize `address` to the tray. False, with nothing moved, when the shell is down.
+
+    The helper moves the window itself: it has just read the address fresh, while
+    the widget's copy can be a poll old (or missing for a just-relaunched app).
+    """
+    if ipc("refresh") != 0:
+        return False
+    move_to_hidden(address)
+    ipc("refresh")
+    return True
 
 
 def is_popout(w):

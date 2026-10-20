@@ -25,7 +25,7 @@ def main():
         loaded = d.load_dock()
         app = d.find_by_class(loaded[1], w.get("class") or "") if loaded else None
         # A popout closes like any other window; only the main window parks.
-        if app and not d.is_popout(w) and d.hide(app["id"]):
+        if app and not d.is_popout(w) and d.park(w["address"]):
             return
     d.close_window(w["address"])
 

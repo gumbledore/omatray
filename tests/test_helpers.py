@@ -123,7 +123,8 @@ class HelperTests(unittest.TestCase):
         return [c for c in self.of("hyprctl") if c[1] == "dispatch" and "window.move" in c[2]]
 
     def hides(self):
-        return [c for c in self.of("omarchy-shell") if "hide" in c]
+        """Parks: moves to the tray workspace."""
+        return [c for c in self.moves() if "special:omatray" in c[2]]
 
     def docked_dock(self, cls=OUTLOOK_WORK, app_id="outlook-work"):
         return json.dumps({"apps": [{"id": app_id, "name": "Outlook", "matchClass": cls,
@@ -137,8 +138,6 @@ class HelperTests(unittest.TestCase):
                              "desktopId": "Outlook", "url": "https://outlook.office.com/mail/",
                              "profile": "Work", "icon": "outlook"})
         self.assertIsNone(d.validate_app(e))
-        # A fresh entry is parked directly: the widget may not know the id yet.
-        self.assertEqual(self.hides(), [])
         self.assertEqual(len(self.moves()), 1)
         self.assertIn("special:omatray", self.moves()[0][2])
         self.assertEqual(self.closes(), [])
@@ -147,7 +146,7 @@ class HelperTests(unittest.TestCase):
         self.dock(active=window(GMAIL))
         self.dock(active=window(GMAIL))
         self.assertEqual([a["id"] for a in self.read_dock()["apps"]], ["gmail"])
-        self.assertEqual((len(self.moves()), len(self.hides())), (1, 1))
+        self.assertEqual(len(self.hides()), 2)
 
     def test_dock_two_profiles_two_entries(self):
         self.dock(active=window(OUTLOOK_WORK))
@@ -181,7 +180,8 @@ class HelperTests(unittest.TestCase):
         text = self.docked_dock()
         self.dock(active=window(OUTLOOK_WORK), dock=text)
         self.assertEqual(self.read_text(), text)
-        self.assertEqual(self.hides(), [["omarchy-shell", "-q", "omatray", "hide", "outlook-work"]])
+        self.assertEqual(len(self.hides()), 1)
+        self.assertIn('address:%s' % ADDR, self.hides()[0][2])
         self.assertEqual(self.of("notify-send"), [])
 
     def test_dock_shell_down_moves_window_directly(self):
@@ -218,9 +218,12 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(len(self.read_dock()["apps"]), 2)
 
     # -- close --
-    def test_close_docked_hides(self):
+    def test_close_docked_parks_fresh_address(self):
+        # The helper moves the address it just read; the widget's copy may be stale.
         self.close(active=window(OUTLOOK_WORK), dock=self.docked_dock())
-        self.assertEqual(self.hides(), [["omarchy-shell", "-q", "omatray", "hide", "outlook-work"]])
+        self.assertEqual(len(self.hides()), 1)
+        self.assertIn('address:%s' % ADDR, self.hides()[0][2])
+        self.assertEqual(self.of("omarchy-shell")[-1], ["omarchy-shell", "-q", "omatray", "refresh"])
         self.assertEqual(self.closes(), [])
 
     def test_close_non_docked_closes_by_address(self):
@@ -243,6 +246,7 @@ class HelperTests(unittest.TestCase):
     def test_close_shell_down_falls_back_to_close(self):
         self.close(active=window(OUTLOOK_WORK), dock=self.docked_dock(), shell_down=True)
         self.assertEqual(len(self.closes()), 1)
+        self.assertEqual(self.moves(), [])
 
     def test_close_malformed_file_closes_as_non_docked(self):
         self.close(active=window(OUTLOOK_WORK), dock="{ nope")
